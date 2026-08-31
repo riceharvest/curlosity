@@ -38,7 +38,8 @@ Response (pretty-printed JSON on stdout):
   "fetches": [
     {"url": "https://example.com",
      "result": {"final_url": "https://example.com/", "status": 200, "bytes": 1256,
-                "markdown": "# Example Domain\n\n...", "from_cache": false, "etag": "\"...\""}}
+                "markdown": "# Example Domain\n\n...", "summary": "This domain is for use in...",
+                "from_cache": false, "etag": "\"...\""}}
   ],
   "fetch_only_mode": false,
   "ok": true
@@ -62,7 +63,7 @@ PAGES = {
 }
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = PAGES.get(self.path, b"<html><body>missing</body></html>").encode()
+        body = str(PAGES.get(self.path, "<html><body>404</body></html>")).encode()
         code = 200 if self.path in PAGES else 404
         self.send_response(code)
         self.send_header("Content-Type", "text/html")
@@ -87,7 +88,7 @@ echo '{"fetches": [
 kill $FIXTURE_PID
 ```
 
-Each result comes back with extracted markdown (`# Fixture`, `# Docs`, `# Pricing`) and `cache_status: miss` on first fetch.
+Each result comes back with extracted markdown (`# Fixture`, `# Docs`, `# Pricing`) and `cache_status: miss` on first fetch. Add `--summarize` to get a local extractive summary per page (`"summary": "home page"` style, no network).
 
 Caching is skipped for private-network runs (responses never persisted), so hit behavior is visible on public URLs:
 
@@ -174,7 +175,8 @@ Web fetches are adversarial. curlosity is deny-by-default; every item below is c
 ## Hermes registration
 
 ```bash
-# make it available as an agent tool
+# make it available as an agent tool (the manifest is the same JSON printed by --tool-manifest;
+# the binary also writes it next to itself as hermes-tool.json on --hermes-tool)
 curlosity --tool-manifest > ~/.hermes/tools/curlosity.json
 # completions + man page
 curlosity --completions bash > ~/.local/share/bash-completion/completions/curlosity
@@ -183,10 +185,15 @@ curlosity --man | gzip > /usr/local/share/man/man1/curlosity.1.gz
 
 The tool manifest documents the stdin schema, output envelope, fetch-only mode, provider env vars, concurrency defaults, security model, flags, and exit codes for agent tool discovery.
 
+## Runnable demo
+
+A copy-pasteable end-to-end demo (fixture + fetch + extract + summary + 404 case) is at
+`/tmp/curlosity-demo` after running `cargo test` - the integration suite writes it there.
+
 ## Development
 
 ```bash
-cargo test          # 25 tests, no external network needed (in-process fixtures)
+cargo test          # 31 tests, no external network needed (in-process fixtures)
 cargo clippy --all-targets
 cargo build --release
 ```

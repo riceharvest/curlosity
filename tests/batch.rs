@@ -619,6 +619,62 @@ fn brave_provider_parses_results() {
     });
 }
 
+/// Writes a copy-pasteable end-to-end demo to /tmp/curlosity-demo after a run.
+#[test]
+fn writes_runnable_demo() {
+    let demo = r#"#!/bin/sh
+# curlosity end-to-end demo: local fixture + fetch + extract + summary + 404
+set -e
+PORT=8500
+python3 - <<'PYEOF' &
+import http.server, socketserver
+PORT = 8500  # keep in sync with shell PORT (heredoc is quoted, no shell expansion)
+PAGES = {
+    "/": "<html><body><h1>Fixture</h1><p>home page</p></body></html>",
+    "/docs": "<html><body><h1>Docs</h1><p>api documentation</p></body></html>",
+    "/pricing": "<html><body><h1>Pricing</h1><p>free tier available</p></body></html>",
+}
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def do_GET(self):
+        body = str(PAGES.get(self.path, "<html><body>404</body></html>")).encode()
+        code = 200 if self.path in PAGES else 404
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a): pass
+socketserver.ThreadingTCPServer.allow_reuse_address = True
+socketserver.ThreadingTCPServer(("127.0.0.1", PORT), H).serve_forever()
+PYEOF
+for i in $(seq 1 50); do
+  curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break
+  sleep 0.1
+done
+echo '{"fetches": [
+  {"url": "http://127.0.0.1:'"$PORT"'/"},
+  {"url": "http://127.0.0.1:'"$PORT"'/docs"},
+  {"url": "http://127.0.0.1:'"$PORT"'/pricing"},
+  {"url": "http://127.0.0.1:'"$PORT"'/missing"}
+]}' | curlosity --allow-private-network --cache-status --summarize --cache-path /tmp/curlosity-demo.sqlite
+kill %1
+"#;
+    let dir = std::env::temp_dir().join("curlosity-demo");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("run-demo.sh"), demo).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            dir.join("run-demo.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+    }
+}
+
 #[test]
 fn default_cache_path_honors_env_override() {
     // Can't safely set env in parallel tests; test the function shape instead.
