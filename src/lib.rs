@@ -380,10 +380,21 @@ pub mod resolver {
 /// early-position and heading-adjacent sentences. Deterministic: ties are
 /// broken by document position. Output is UNTRUSTED page-derived data.
 pub fn summarize_text(text: &str, max_sentences: usize) -> String {
+    summarize_text_opts(text, max_sentences, true, 4)
+}
+
+/// Full version with dedupe and min-length options.
+pub fn summarize_text_opts(
+    text: &str,
+    max_sentences: usize,
+    dedupe: bool,
+    min_sentence_len: usize,
+) -> String {
     let max_sentences = max_sentences.max(1);
     let paragraphs = split_paragraphs(text);
     // Candidate sentences in document order.
     let mut sentences: Vec<Sentence> = Vec::new();
+    let mut seen_signatures: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut prev_was_heading = false;
     for (para_index, para) in paragraphs.iter().enumerate() {
         for raw in split_sentences(para) {
@@ -397,6 +408,18 @@ pub fn summarize_text(text: &str, max_sentences: usize) -> String {
             let alpha_count = tokens.iter().filter(|t| t.len() > 1).count();
             if !is_heading && alpha_count < 3 {
                 continue;
+            }
+            // Skip sentences shorter than the minimum length.
+            if !is_heading && raw.chars().count() < min_sentence_len {
+                continue;
+            }
+            // Dedupe near-identical sentences.
+            if dedupe {
+                let sig = tokens.join(" ");
+                if seen_signatures.contains(&sig) {
+                    continue;
+                }
+                seen_signatures.insert(sig);
             }
             let after_heading = prev_was_heading;
             prev_was_heading = is_heading;
@@ -567,12 +590,19 @@ pub fn html_to_markdown(
     html: &str,
     base_url: &str,
     max_output_bytes: usize,
+    strip_style: bool,
 ) -> Result<String, CurlosityError> {
+    // Pre-process: strip <style> and <script> blocks to avoid CSS pollution.
+    let cleaned = if strip_style {
+        strip_style_blocks(html)
+    } else {
+        html.to_owned()
+    };
     let converter = htmd::HtmlToMarkdown::builder()
         .scripting_enabled(false)
         .build();
     let converted = converter
-        .convert(html)
+        .convert(&cleaned)
         .map_err(|e| CurlosityError::Config(format!("html conversion failed: {e}")))?;
     let markdown = normalize_markdown(&converted);
     if markdown.len() > max_output_bytes {
@@ -582,6 +612,15 @@ pub fn html_to_markdown(
     }
     let _ = base_url; // htmd resolves relative links against the document itself
     Ok(markdown)
+}
+
+/// Strips <style>...</style> and <script>...</script> blocks from raw HTML.
+fn strip_style_blocks(html: &str) -> String {
+    let style_re = regex::Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap();
+    let script_re = regex::Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap();
+    let step1 = style_re.replace_all(html, "");
+    let step2 = script_re.replace_all(&step1, "");
+    step2.to_string()
 }
 
 fn normalize_markdown(input: &str) -> String {
@@ -703,6 +742,12 @@ pub struct BatchConfig {
     pub summarize: bool,
     /// Max sentences per summary.
     pub summary_sentences: usize,
+    /// Strip <style>/<script> blocks from HTML before conversion.
+    pub strip_style: bool,
+    /// Skip near-identical sentences in summaries.
+    pub dedupe_sentences: bool,
+    /// Minimum character length for non-heading summary sentences.
+    pub min_sentence_len: usize,
     pub user_agent: String,
     /// Provider config for real search. None => fetch-only mode.
     pub provider: Option<ProviderConfig>,
@@ -725,6 +770,9 @@ impl Default for BatchConfig {
             cache_status: false,
             summarize: false,
             summary_sentences: 5,
+            strip_style: true,
+            dedupe_sentences: true,
+            min_sentence_len: 4,
             user_agent: concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")).to_owned(),
             provider: None,
             max_redirect_hops: 10,
@@ -1666,11 +1714,16 @@ async fn run_fetch(
             }
             let (markdown, summary) = if extract {
                 let body_str = String::from_utf8_lossy(&f.body).to_string();
-                let md = html_to_markdown(&body_str, &f.final_url, config.max_markdown_bytes).ok();
-                let summary = md
-                    .as_deref()
-                    .filter(|_| config.summarize)
-                    .map(|md| summarize_text(md, config.summary_sentences));
+                let md =
+                    html_to_markdown(&body_str, &f.final_url, config.max_markdown_bytes, true).ok();
+                let summary = md.as_deref().filter(|_| config.summarize).map(|md| {
+                    summarize_text_opts(
+                        md,
+                        config.summary_sentences,
+                        config.dedupe_sentences,
+                        config.min_sentence_len,
+                    )
+                });
                 (md, summary)
             } else {
                 (None, None)

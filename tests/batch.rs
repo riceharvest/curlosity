@@ -8,7 +8,7 @@ use std::str::FromStr;
 use curlosity::{
     BatchConfig, BatchRequest, BraveProvider, CurlosityError, FetchRequest, Fetcher,
     ProviderConfig, SearchRequest, UrlFilter, cache, canonicalize_url, html_to_markdown,
-    is_safe_ip, sniff_html_prefix, summarize_text,
+    is_safe_ip, sniff_html_prefix, summarize_text, summarize_text_opts,
 };
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ fn rejects_whitespace() {
 fn html_to_markdown_extracts_headings_and_links() {
     let html =
         r#"<html><body><h1>Title</h1><p>Hello <a href="https://x.y">link</a></p></body></html>"#;
-    let md = html_to_markdown(html, "https://example.com", 1024).unwrap();
+    let md = html_to_markdown(html, "https://example.com", 1024, true).unwrap();
     assert!(md.contains("Title"), "markdown: {md}");
     assert!(md.contains("Hello"), "markdown: {md}");
 }
@@ -96,7 +96,7 @@ fn html_to_markdown_extracts_headings_and_links() {
 #[test]
 fn markdown_output_cap_enforced() {
     let html = format!("<html><body>{}</body></html>", "word ".repeat(10_000));
-    let result = html_to_markdown(&html, "https://example.com", 256);
+    let result = html_to_markdown(&html, "https://example.com", 256, true);
     assert!(matches!(result, Err(CurlosityError::BodyTooLarge { .. })));
 }
 
@@ -387,8 +387,13 @@ fn fetcher_extracts_markdown_and_reports_404() {
             .unwrap();
         assert_eq!(ok.status, 200);
         assert_eq!(ok.etag.as_deref(), Some("\"v1\""));
-        let md =
-            html_to_markdown(&String::from_utf8_lossy(&ok.body), &ok.final_url, 1_000_000).unwrap();
+        let md = html_to_markdown(
+            &String::from_utf8_lossy(&ok.body),
+            &ok.final_url,
+            1_000_000,
+            true,
+        )
+        .unwrap();
         assert!(md.contains("Page A") && md.contains("alpha"), "{md}");
 
         let err = fetcher
@@ -651,8 +656,13 @@ fn prompt_injection_returns_as_inert_text() {
             .get(&server.url("/inject"), 1_000_000, None)
             .await
             .unwrap();
-        let md =
-            html_to_markdown(&String::from_utf8_lossy(&ok.body), &ok.final_url, 1_000_000).unwrap();
+        let md = html_to_markdown(
+            &String::from_utf8_lossy(&ok.body),
+            &ok.final_url,
+            1_000_000,
+            true,
+        )
+        .unwrap();
         assert!(
             md.contains(injection),
             "injection text must round-trip verbatim: {md}"
@@ -865,4 +875,61 @@ fn batch_without_summarize_flag_has_no_summary_key() {
             "no summary key without --summarize"
         );
     });
+}
+
+// ---------------------------------------------------------------------------
+// --strip-style / --dedupe-sentences / --min-sentence-len tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn strip_style_removes_css_pollution() {
+    let html = r#"<html><head><style>body{background:#eee;color:red}h1{font-size:2em}</style></head><body><h1>Test</h1><p>Hello world content here.</p></body></html>"#;
+    let md = html_to_markdown(html, "https://example.com", 1024, true).unwrap();
+    assert!(!md.contains("background"), "CSS must be stripped: {md}");
+    assert!(!md.contains("font-size"), "CSS must be stripped: {md}");
+    assert!(md.contains("Hello world"), "content must remain: {md}");
+}
+
+#[test]
+fn strip_style_off_keeps_css() {
+    let html = r#"<html><head><style>body{background:#eee}</style></head><body><p>Text here.</p></body></html>"#;
+    let md = html_to_markdown(html, "https://example.com", 1024, false).unwrap();
+    assert!(
+        md.contains("background"),
+        "CSS should remain when strip_style=false: {md}"
+    );
+}
+
+#[test]
+fn dedupe_removes_near_identical_sentences() {
+    let text = "This is a test sentence about topic. This is a test sentence about topic. Different sentence entirely here.";
+    let result = summarize_text_opts(text, 5, true, 4);
+    // The duplicate sentence should only appear once.
+    let count = result
+        .matches("This is a test sentence about topic")
+        .count();
+    assert_eq!(count, 1, "duplicate sentence should be removed: {result}");
+}
+
+#[test]
+fn min_sentence_len_filters_short_fragments() {
+    let text = "Go. Stop. Run. This is a proper sentence with enough length to pass the filter.";
+    let result = summarize_text_opts(text, 5, false, 8);
+    // "Go." "Stop." "Run." are all shorter than 8 chars, should be filtered.
+    assert!(
+        !result.contains("Go."),
+        "short fragments should be filtered: {result}"
+    );
+    assert!(
+        result.contains("proper sentence"),
+        "long sentence should remain: {result}"
+    );
+}
+
+#[test]
+fn summarize_opts_deterministic() {
+    let text = "First sentence about testing frameworks. Second sentence about deployment pipelines. Third sentence about testing frameworks again.";
+    let a = summarize_text_opts(text, 2, true, 4);
+    let b = summarize_text_opts(text, 2, true, 4);
+    assert_eq!(a, b, "must be deterministic");
 }
