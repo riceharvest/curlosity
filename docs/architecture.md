@@ -1,54 +1,53 @@
 # Architecture
 
-`recurlsively` is designed as a local Rust binary with deterministic, bounded behavior. The repository currently implements only the CLI/configuration boundary. Planned components are described here without placeholder module declarations or fake implementations.
+`curlosity` is a single static Rust binary (tokio + reqwest rustls) with
+deterministic, bounded behavior. No browser runtime, no shell-outs, no
+dynamic configuration beyond flags and environment variables.
 
-## Boundaries
+## Modules
 
-1. **CLI and configuration** parse arguments, apply defaults, validate bounds, and expose policy choices.
-2. **URL/policy layer** will normalize URLs, enforce exact-origin scope, apply query and redirect policy, and classify special/private addresses.
-3. **Fetcher** will implement bounded HTTP(S) requests, timeouts, delays, retries, response-size limits, and robots behavior.
-4. **Scheduler** will persist a queue and page state in SQLite, enforce global/per-host concurrency, and support resumable/fresh runs.
-5. **Extractor** will convert supported HTML documents into deterministic Markdown and discover links.
-6. **Snapshot/output layer** will write stable files, manifests, and reports under the configured output directory.
+- `src/lib.rs` - batch engine: URL policy, IP classification, safe DNS
+  resolver, bounded fetcher, HTML-to-Markdown extraction, include/exclude
+  glob filter, sqlite cache, Brave search provider, concurrency control.
+- `src/main.rs` - clap CLI: flags, input handling, exit codes, shell
+  completions, man page, tool manifest, update dispatch.
+- `src/update.rs` - self-update from GitHub Releases with checksum
+  verification and atomic replacement.
 
-Each boundary should have contract tests before implementation. Network and filesystem effects must be injected or isolated in tests; production code must not depend on a browser runtime.
-
-## Planned flow
+## Data flow
 
 ```text
-START_URL + options
-        |
-        v
-  CLI/config validation
-        |
-        v
-  URL policy + scheduler
-        |
-        +--> bounded fetcher --> HTML response
-        |                         |
-        |                         v
-        +<-- discovered links <-- Markdown extractor
-        |
-        v
-  SQLite state + deterministic snapshot output
+stdin batch JSON
+      |
+      v
+config validation (concurrency, globs, provider)
+      |
+      +--> searches --> provider (Brave API) or "skipped" envelope
+      |
+      +--> fetches --> per-URL: glob filter -> canonicalize + private-IP deny
+              |         -> SafeResolver DNS check -> bounded GET
+              |         -> manual redirect loop (<=10, same-host, no downgrades)
+              |         -> content-type gate -> streamed body cap
+              |         -> htmd extraction (2MiB cap)
+              v
+      sqlite cache (etag/last-modified conditional GETs)
+      |
+      v
+JSON envelope {searches, fetches, fetch_only_mode, ok}
 ```
 
-The scheduler is the source of truth for queue, visit status, retry count, byte budget, and run identity. Output files are derived artifacts and must be safe to regenerate from durable state.
+All fetches run under a global semaphore plus a per-host semaphore. Retries
+use exponential backoff on 408/425/429/5xx and connect errors only.
 
-## Security model
+## Security posture
 
-The default scope is exact origin. Redirects must be checked against the configured policy before following. Private, loopback, link-local, multicast, and other special destinations are denied by default at resolution/connect time, not only by string inspection. `--allow-private-network` is an explicit unsafe opt-in and must be surfaced in run metadata.
+Private, loopback, link-local, and other special-use IPv4/IPv6 ranges are
+denied by default, including IPv4-mapped IPv6. DNS results are re-checked
+inside a custom resolver at connect time, closing the DNS-rebinding gap.
+Redirects are followed manually so every hop re-validates. Bodies are
+capped against both `Content-Length` and streamed bytes. Extracted
+markdown is page-controlled untrusted data.
 
-All work is bounded by depth, page count, global bytes, per-body bytes, timeout, retries, delay, and concurrency. No credentials are read implicitly. Authentication and browser state are out of scope for the MVP.
-
-## Determinism
-
-Stable URL normalization, deterministic queue ordering, canonical Markdown formatting, and explicit report schemas are required. Concurrency must not change the selected corpus or output ordering. Any unavoidable source nondeterminism must be recorded in the report rather than hidden.
-
-## Delivery stages
-
-- **Stage 1 (current):** CLI/configuration, validation, help/version, public docs, and CI.
-- **Stage 2:** URL policy, HTTP fetcher, robots/redirect/query behavior, and focused fixtures.
-- **Stage 3:** SQLite scheduler, bounded concurrency, resumability, and fresh runs.
-- **Stage 4:** HTML-to-Markdown extraction, deterministic output, manifests, and reports.
-- **Stage 5:** cross-platform release binaries, checksums, and installers.
+`--allow-private-network` skips all address checks for trusted local
+fixtures and also disables the cache so private-network responses are
+never persisted.

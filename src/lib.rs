@@ -509,6 +509,8 @@ pub struct BatchConfig {
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub cache: bool,
+    /// Report explicit per-fetch cache_status: hit/miss in results.
+    pub cache_status: bool,
     pub user_agent: String,
     /// Provider config for real search. None => fetch-only mode.
     pub provider: Option<ProviderConfig>,
@@ -528,6 +530,7 @@ impl Default for BatchConfig {
             include: Vec::new(),
             exclude: Vec::new(),
             cache: true,
+            cache_status: false,
             user_agent: concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")).to_owned(),
             provider: None,
             max_redirect_hops: 10,
@@ -656,6 +659,97 @@ impl BraveProvider {
                     .collect()
             })
             .unwrap_or_default())
+    }
+}
+
+/// Serper.dev Google-search provider (SERPER_API_KEY).
+pub struct SerperProvider {
+    client: reqwest::Client,
+    endpoint: String,
+    api_key: String,
+}
+
+pub const SERPER_DEFAULT_ENDPOINT: &str = "https://google.serper.dev/search";
+
+impl SerperProvider {
+    pub fn new(
+        config: &ProviderConfig,
+        config_defaults: &BatchConfig,
+    ) -> Result<Self, CurlosityError> {
+        let endpoint = config
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| SERPER_DEFAULT_ENDPOINT.to_owned());
+        let client = reqwest::Client::builder()
+            .user_agent(&config_defaults.user_agent)
+            .timeout(config_defaults.timeout)
+            .build()
+            .map_err(|e| CurlosityError::Config(format!("provider client: {e}")))?;
+        Ok(Self {
+            client,
+            endpoint,
+            api_key: config.api_key.clone(),
+        })
+    }
+}
+
+impl SearchProvider for SerperProvider {
+    fn search<'a>(
+        &'a self,
+        query: &'a str,
+        count: u32,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<SearchResult>, CurlosityError>> + Send + 'a,
+        >,
+    > {
+        Box::pin(self.search_inner(query, count))
+    }
+}
+
+impl SerperProvider {
+    async fn search_inner(
+        &self,
+        query: &str,
+        count: u32,
+    ) -> Result<Vec<SearchResult>, CurlosityError> {
+        #[derive(Deserialize)]
+        struct SerperResponse {
+            #[serde(default)]
+            organic: Vec<SerperResult>,
+        }
+        #[derive(Deserialize)]
+        struct SerperResult {
+            link: String,
+            title: String,
+            #[serde(default)]
+            snippet: String,
+        }
+        let resp = self
+            .client
+            .post(&self.endpoint)
+            .header("X-API-KEY", &self.api_key)
+            .json(&serde_json::json!({"q": query, "num": count}))
+            .send()
+            .await
+            .map_err(|e| CurlosityError::Network(e.to_string()))?;
+        let status = resp.status().as_u16();
+        if !(200..300).contains(&status) {
+            return Err(CurlosityError::Status { status });
+        }
+        let parsed: SerperResponse = resp
+            .json()
+            .await
+            .map_err(|e| CurlosityError::Network(format!("bad provider response: {e}")))?;
+        Ok(parsed
+            .organic
+            .into_iter()
+            .map(|r| SearchResult {
+                url: r.link,
+                title: r.title,
+                snippet: r.snippet,
+            })
+            .collect())
     }
 }
 
@@ -1087,9 +1181,10 @@ pub async fn batch(
     let provider: Option<Arc<dyn SearchProvider>> = match &config.provider {
         Some(pcfg) => match pcfg.name.to_ascii_lowercase().as_str() {
             "brave" => Some(Arc::new(BraveProvider::new(pcfg, config)?)),
+            "serper" => Some(Arc::new(SerperProvider::new(pcfg, config)?)),
             other => {
                 return Err(CurlosityError::Config(format!(
-                    "unknown search provider `{other}` (supported: brave)"
+                    "unknown search provider `{other}` (supported: brave, serper)"
                 )));
             }
         },
@@ -1388,6 +1483,12 @@ async fn run_fetch(
             result.insert("status".into(), serde_json::json!(f.status));
             result.insert("bytes".into(), serde_json::json!(body_len));
             result.insert("from_cache".into(), serde_json::json!(served_from_cache));
+            if config.cache_status {
+                result.insert(
+                    "cache_status".into(),
+                    serde_json::json!(if served_from_cache { "hit" } else { "miss" }),
+                );
+            }
             if let Some(md) = markdown {
                 result.insert("markdown".into(), serde_json::json!(md));
             }

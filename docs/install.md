@@ -1,7 +1,7 @@
-# Installing recurlsively
+# Installing curlosity
 
 Prebuilt binaries are published on the
-[GitHub Releases](https://github.com/riceharvest/recurlsively/releases) page
+[GitHub Releases](https://github.com/riceharvest/curlosity/releases) page
 for every tagged version. You do not need Rust installed.
 
 ## One-line install
@@ -9,13 +9,13 @@ for every tagged version. You do not need Rust installed.
 macOS / Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/riceharvest/recurlsively/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/riceharvest/curlosity/main/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/riceharvest/recurlsively/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/riceharvest/curlosity/main/install.ps1 | iex
 ```
 
 The installer detects your OS and architecture, downloads the matching
@@ -26,13 +26,24 @@ partial install on any failure.
 Pin a specific version:
 
 ```sh
-RECURSIVELY_VERSION=v0.1.0 sh install.sh        # macOS / Linux
-$env:RECURSIVELY_VERSION = "v0.1.0"; irm .../install.ps1 | iex   # Windows
+CURLOSITY_VERSION=v0.1.0 sh install.sh          # macOS / Linux
+$env:CURLOSITY_VERSION = "v0.1.0"; irm .../install.ps1 | iex   # Windows
 ```
+
+## Self-update
+
+An installed binary can replace itself with the latest release:
+
+```sh
+curlosity --update
+```
+
+The updater downloads the release archive, verifies the SHA-256 checksum
+against `SHA256SUMS`, and atomically replaces the running executable.
 
 ## Manual install
 
-1. Download `recurlsively-<version>-<target>.tar.gz` (or `.zip` on Windows)
+1. Download `curlosity-<version>-<target>.tar.gz` (or `.zip` on Windows)
    from the releases page for your platform:
 
    | Target | Platform |
@@ -51,13 +62,14 @@ $env:RECURSIVELY_VERSION = "v0.1.0"; irm .../install.ps1 | iex   # Windows
    Get-FileHash ... -Algorithm SHA256   # Windows
    ```
 
-3. Extract and move the binary somewhere on your `PATH`.
+3. Extract and move the binary somewhere on your `PATH`. Each archive also
+   contains `hermes-tool.json`, the agent tool manifest.
 
 ## Build from source
 
 ```sh
-git clone https://github.com/riceharvest/recurlsively
-cd recurlsively
+git clone https://github.com/riceharvest/curlosity
+cd curlosity
 cargo install --path .
 ```
 

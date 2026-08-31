@@ -1,4 +1,4 @@
-# recurlsively installer for Windows — fail-closed.
+# curlosity installer for Windows — fail-closed.
 # Usage: irm https://raw.githubusercontent.com/riceharvest/curlosity/main/install.ps1 | iex
 # Override version: $env:CURLOSITY_VERSION = "v0.1.0"
 $ErrorActionPreference = "Stop"
@@ -42,7 +42,7 @@ if (-not $Version) { Fail "could not determine release version" }
 $ShortVersion = $Version.Substring(1)
 $Archive = "$Bin-$ShortVersion-$Target.zip"
 $BaseUrl = "https://github.com/$Repo/releases/download/$Version"
-$Tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "recurlsively-install-$PID")
+$Tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "curlosity-install-$PID")
 
 try {
     Write-Host "curlosity-installer: downloading $Version for $Target..."

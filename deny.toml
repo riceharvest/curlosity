@@ -1,4 +1,4 @@
-# cargo-deny configuration for recurlsively.
+# cargo-deny configuration for curlosity.
 # Checks advisories (RustSec) and licenses on every CI run.
 
 [graph]

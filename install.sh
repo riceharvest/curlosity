@@ -1,6 +1,6 @@
 #!/bin/sh
-# recurlsively installer — POSIX, fail-closed.
-# Usage: curl -fsSL https://raw.githubusercontent.com/riceharvest/recurlsively/main/install.sh | sh
+# curlosity installer — POSIX, fail-closed.
+# Usage: curl -fsSL https://raw.githubusercontent.com/riceharvest/curlosity/main/install.sh | sh
 # Override version: CURLOSITY_VERSION=v0.1.0 sh install.sh
 set -eu
 

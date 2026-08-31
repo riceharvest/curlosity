@@ -67,6 +67,12 @@ jobs:
         if: runner.os == 'macOS'
         run: strip "target/${{ matrix.target }}/release/${{ env.BIN }}"
 
+      - name: Emit tool manifest
+        shell: sh
+        run: |
+          # hermes-tool.json: agent tool discovery manifest shipped in every archive
+          "target/${{ matrix.target }}/release/${{ env.BIN }}" --tool-manifest > hermes-tool.json
+
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
@@ -74,7 +80,7 @@ jobs:
           DIR="${{ env.BIN }}-${VERSION}-${{ matrix.target }}"
           mkdir -p "$DIR"
           cp "target/${{ matrix.target }}/release/${{ env.BIN }}" "$DIR/"
-          cp README.md LICENSE-MIT "$DIR/"
+          cp README.md LICENSE-MIT hermes-tool.json "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
           sha256sum "${DIR}.tar.gz" | tee "artifact-sha256-${{ matrix.target }}.txt"
 
@@ -86,7 +92,7 @@ jobs:
           $dir = "${{ env.BIN }}-$version-${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path "$dir" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ env.BIN }}.exe" "$dir/"
-          Copy-Item README.md, LICENSE-MIT "$dir/"
+          Copy-Item README.md, LICENSE-MIT, hermes-tool.json "$dir/"
           Compress-Archive -Path "$dir" -DestinationPath "$dir.zip"
           (Get-FileHash "$dir.zip" -Algorithm SHA256).Hash.ToLower() + "  $dir.zip" | Out-File -Encoding ascii "artifact-sha256-${{ matrix.target }}.txt"
 
