@@ -8,7 +8,7 @@ use std::str::FromStr;
 use curlosity::{
     BatchConfig, BatchRequest, BraveProvider, CurlosityError, FetchRequest, Fetcher,
     ProviderConfig, SearchRequest, UrlFilter, cache, canonicalize_url, html_to_markdown,
-    is_safe_ip, sniff_html_prefix,
+    is_safe_ip, sniff_html_prefix, summarize_text,
 };
 
 // ---------------------------------------------------------------------------
@@ -721,5 +721,148 @@ fn redirect_hop_limit_boundary() {
             Ok(f) => assert_eq!(f.status, 200, "10 hops must succeed"),
             Err(e) => panic!("10 hops must succeed, got: {e}"),
         }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// --summarize: local extractive summary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn summarize_picks_content_bearing_sentences_in_order() {
+    let md = "# Rust guide\n\nRust is a systems programming language focused on safety. Many teams adopted Rust for performance-critical services.\n\n# Ecosystem\n\nThe ecosystem includes cargo, crates.io, and extensive tooling. Cargo builds packages deterministically. Rust compiles to native binaries without a runtime.\n\n# Conclusion\n\nAdoption keeps growing across the industry. Rust delivers memory safety guarantees.";
+    let summary = summarize_text(md, 3);
+    assert!(!summary.is_empty());
+    // Deterministic: same input, same output.
+    assert_eq!(summary, summarize_text(md, 3));
+    // Sentence cap respected: no more than 3 sentence units joined by spaces.
+    let parts = summary.split(". ").count();
+    assert!(parts <= 4, "summary too long: {summary}");
+}
+
+#[test]
+fn summarize_respects_sentence_cap() {
+    let md = (0..20)
+        .map(|i| format!("Sentence number {i} discusses topic {i} in detail."))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let summary = summarize_text(&md, 2);
+    let count = summary.matches("Sentence number").count();
+    assert_eq!(count, 2, "expected exactly 2 sentences, got: {summary}");
+}
+
+#[test]
+fn summarize_empty_and_tiny_inputs() {
+    assert_eq!(summarize_text("", 5), "");
+    assert_eq!(summarize_text("   \n\n  ", 5), "");
+    // Tiny input: whatever exists is returned (bounded).
+    let s = summarize_text("Just one short line here.", 5);
+    assert!(!s.is_empty());
+}
+
+#[test]
+fn summarize_heading_boost_prefers_topic_sentences() {
+    // The heading-adjacent sentence names the topic; it should win a slot.
+    let md = "# Kubernetes operations\n\nKubernetes orchestrates containers across clusters. Random filler sentence about nothing much here. Another filler with different words entirely.";
+    let summary = summarize_text(md, 1);
+    assert!(
+        summary.to_lowercase().contains("kubernetes"),
+        "topic sentence should win: {summary}"
+    );
+}
+
+#[test]
+fn batch_summarize_flag_attaches_summaries() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut routes = HashMap::new();
+    routes.insert(
+        "/a".to_string(),
+        (
+            "text/html",
+            200u16,
+            page("Page A", "Alpha systems need reliable tooling. This page describes alpha systems in depth. Extra filler follows here with unrelated words."),
+        ),
+    );
+    routes.insert(
+        "/b".to_string(),
+        ("text/html", 200u16, page("Page B", "beta")),
+    );
+    let server = Server::start(routes);
+    rt.block_on(async {
+        let config = BatchConfig {
+            allow_private_network: true,
+            summarize: true,
+            summary_sentences: 2,
+            ..test_config(true)
+        };
+        let req = BatchRequest {
+            searches: vec![],
+            fetches: vec![
+                FetchRequest {
+                    url: server.url("/a"),
+                    extract: true,
+                },
+                FetchRequest {
+                    url: server.url("/b"),
+                    extract: true,
+                },
+            ],
+            extract_top: None,
+        };
+        let out = curlosity::batch(req, &config).await.unwrap();
+        let fetches = out["fetches"].as_array().unwrap();
+        // Page A: summary present and derived from page content.
+        let a = &fetches[0]["result"];
+        let summary = a["summary"]
+            .as_str()
+            .expect("summary must be present for /a");
+        assert!(
+            summary.to_lowercase().contains("alpha"),
+            "summary: {summary}"
+        );
+        assert!(
+            summary.len() < a["markdown"].as_str().unwrap().len(),
+            "summary should be shorter than markdown"
+        );
+        // Page B: thin content still yields some summary (or empty string) but never an error.
+        let b = &fetches[1]["result"];
+        assert!(
+            b["summary"].is_string(),
+            "summary key must exist when --summarize is on"
+        );
+    });
+}
+
+#[test]
+fn batch_without_summarize_flag_has_no_summary_key() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut routes = HashMap::new();
+    routes.insert(
+        "/a".to_string(),
+        ("text/html", 200u16, page("Page A", "alpha")),
+    );
+    let server = Server::start(routes);
+    rt.block_on(async {
+        let config = test_config(true);
+        let req = BatchRequest {
+            searches: vec![],
+            fetches: vec![FetchRequest {
+                url: server.url("/a"),
+                extract: true,
+            }],
+            extract_top: None,
+        };
+        let out = curlosity::batch(req, &config).await.unwrap();
+        let result = &out["fetches"][0]["result"];
+        assert!(
+            result.get("summary").is_none(),
+            "no summary key without --summarize"
+        );
     });
 }

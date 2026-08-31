@@ -369,6 +369,194 @@ pub mod resolver {
 }
 
 // ---------------------------------------------------------------------------
+// Extractive summary: local, deterministic, no network
+// ---------------------------------------------------------------------------
+
+/// Bounded extractive summary: picks the most content-bearing sentences from
+/// plain text (e.g. extracted markdown) and returns them in document order.
+///
+/// Purely local - no network, no model. Scores sentences by term frequency
+/// against the document itself (excluding stopwords), with light boosts for
+/// early-position and heading-adjacent sentences. Deterministic: ties are
+/// broken by document position. Output is UNTRUSTED page-derived data.
+pub fn summarize_text(text: &str, max_sentences: usize) -> String {
+    let max_sentences = max_sentences.max(1);
+    let paragraphs = split_paragraphs(text);
+    // Candidate sentences in document order.
+    let mut sentences: Vec<Sentence> = Vec::new();
+    let mut prev_was_heading = false;
+    for (para_index, para) in paragraphs.iter().enumerate() {
+        for raw in split_sentences(para) {
+            let tokens = tokenize(&raw);
+            if tokens.is_empty() {
+                continue;
+            }
+            let is_heading = raw.starts_with('#');
+            // Skip boilerplate-only fragments (nav crumbs, link-only lines),
+            // but never skip headings - they anchor the summary.
+            let alpha_count = tokens.iter().filter(|t| t.len() > 1).count();
+            if !is_heading && alpha_count < 3 {
+                continue;
+            }
+            let after_heading = prev_was_heading;
+            prev_was_heading = is_heading;
+            sentences.push(Sentence {
+                text: raw,
+                tokens,
+                para_index,
+                position: sentences.len(),
+                after_heading,
+            });
+        }
+    }
+    if sentences.is_empty() {
+        return String::new();
+    }
+
+    // Document term frequencies (excluding stopwords).
+    let mut df: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for s in &sentences {
+        let mut seen = std::collections::HashSet::new();
+        for t in &s.tokens {
+            if !is_stopword(t) && seen.insert(t.clone()) {
+                *df.entry(t.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // Score each sentence.
+    let total = sentences.len() as f64;
+    let mut scored: Vec<(usize, f64)> = Vec::new();
+    for s in &sentences {
+        let mut score: f64 = 0.0;
+        let mut seen = std::collections::HashSet::new();
+        for t in &s.tokens {
+            if is_stopword(t) || t.len() < 2 || !seen.insert(t.clone()) {
+                continue;
+            }
+            if let Some(freq) = df.get(t) {
+                score += *freq as f64 / total;
+            }
+        }
+        // Length normalization: avoid bias toward very long sentences.
+        let token_count = s.tokens.len().max(1) as f64;
+        score /= token_count.sqrt();
+        // Light boost for early document position (intro/thesis sentences).
+        if s.para_index == 0 {
+            score *= 1.25;
+        } else if s.para_index == 1 {
+            score *= 1.1;
+        }
+        // Boost for the first sentence after a heading.
+        if s.after_heading {
+            score *= 1.3;
+        }
+        scored.push((s.position, score));
+    }
+
+    // Take top N by score, then restore document order.
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.0.cmp(&b.0))
+    });
+    scored.truncate(max_sentences);
+    scored.sort_by_key(|(pos, _)| *pos);
+
+    let mut out = String::new();
+    for (i, (pos, _)) in scored.iter().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        out.push_str(&sentences[*pos].text);
+    }
+    out
+}
+
+struct Sentence {
+    text: String,
+    tokens: Vec<String>,
+    para_index: usize,
+    position: usize,
+    after_heading: bool,
+}
+
+fn split_paragraphs(text: &str) -> Vec<&str> {
+    text.split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+/// Splits a paragraph into sentence-ish units: markdown headings count as
+/// their own unit; body text splits on `.`, `!`, `?` followed by whitespace.
+fn split_sentences(paragraph: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in paragraph.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Markdown headings are atomic units (they anchor summaries).
+        if line.starts_with('#') {
+            out.push(line.to_owned());
+            continue;
+        }
+        let mut current = String::new();
+        let chars: Vec<char> = line.chars().collect();
+        for (i, c) in chars.iter().enumerate() {
+            current.push(*c);
+            if matches!(c, '.' | '!' | '?') {
+                let ends = match chars.get(i + 1) {
+                    None => true,
+                    Some(n) if n.is_whitespace() => true,
+                    Some(')') | Some('"') | Some('\'') => chars
+                        .get(i + 2)
+                        .map(|n2| n2.is_whitespace())
+                        .unwrap_or(true),
+                    _ => false,
+                };
+                if ends {
+                    let s = current.trim().to_owned();
+                    if !s.is_empty() {
+                        out.push(s);
+                    }
+                    current.clear();
+                }
+            }
+        }
+        let rest = current.trim();
+        if !rest.is_empty() {
+            out.push(rest.to_owned());
+        }
+    }
+    out
+}
+
+fn tokenize(sentence: &str) -> Vec<String> {
+    sentence
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+fn is_stopword(token: &str) -> bool {
+    const STOPWORDS: &[&str] = &[
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "has", "have", "he",
+        "her", "his", "how", "i", "in", "is", "it", "its", "of", "on", "or", "our", "she", "that",
+        "the", "their", "them", "then", "there", "these", "they", "this", "to", "was", "we",
+        "were", "what", "when", "where", "which", "who", "will", "with", "you", "your", "also",
+        "more", "most", "some", "such", "than", "can", "not", "no", "do", "does", "did", "if",
+        "into", "about", "all", "other", "only", "so", "up", "out", "over", "under",
+    ];
+    STOPWORDS.contains(&token)
+}
+
+// ---------------------------------------------------------------------------
 // Extraction: HTML -> Markdown (htmd), bounded
 // ---------------------------------------------------------------------------
 
@@ -511,6 +699,10 @@ pub struct BatchConfig {
     pub cache: bool,
     /// Report explicit per-fetch cache_status: hit/miss in results.
     pub cache_status: bool,
+    /// Attach a local extractive summary per fetched page.
+    pub summarize: bool,
+    /// Max sentences per summary.
+    pub summary_sentences: usize,
     pub user_agent: String,
     /// Provider config for real search. None => fetch-only mode.
     pub provider: Option<ProviderConfig>,
@@ -531,6 +723,8 @@ impl Default for BatchConfig {
             exclude: Vec::new(),
             cache: true,
             cache_status: false,
+            summarize: false,
+            summary_sentences: 5,
             user_agent: concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")).to_owned(),
             provider: None,
             max_redirect_hops: 10,
@@ -1470,11 +1664,16 @@ async fn run_fetch(
                     fetched_at_ms: cache::unix_ms(),
                 });
             }
-            let markdown = if extract {
+            let (markdown, summary) = if extract {
                 let body_str = String::from_utf8_lossy(&f.body).to_string();
-                html_to_markdown(&body_str, &f.final_url, config.max_markdown_bytes).ok()
+                let md = html_to_markdown(&body_str, &f.final_url, config.max_markdown_bytes).ok();
+                let summary = md
+                    .as_deref()
+                    .filter(|_| config.summarize)
+                    .map(|md| summarize_text(md, config.summary_sentences));
+                (md, summary)
             } else {
-                None
+                (None, None)
             };
             let body_len = f.body.len();
             let etag = f.etag.clone();
@@ -1491,6 +1690,9 @@ async fn run_fetch(
             }
             if let Some(md) = markdown {
                 result.insert("markdown".into(), serde_json::json!(md));
+            }
+            if let Some(s) = summary {
+                result.insert("summary".into(), serde_json::json!(s));
             }
             if let Some(e) = etag {
                 result.insert("etag".into(), serde_json::json!(e));
