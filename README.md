@@ -132,6 +132,8 @@ curlosity --provider ~/.config/curlosity/brave.json
 | `--no-cache` | off | Disable the sqlite re-fetch cache |
 | `--cache-path` | `~/.cache/curlosity/state.sqlite` | Cache DB location |
 | `--cache-status` | off | Add explicit `cache_status: hit/miss` per fetch result |
+| `--summarize` | off | Attach a local extractive summary to each fetched page |
+| `--summary-sentences` | `5` | Sentences per summary (with `--summarize`) |
 | `--provider` | (env) | Provider config JSON file |
 | `--brave` | off | Use Brave Search (reads `BRAVE_API_KEY`) |
 | `--serper` | off | Use Serper.dev Google search (reads `SERPER_API_KEY`) |
