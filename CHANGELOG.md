@@ -15,3 +15,5 @@
 | 7 | Summary quality degraded by CSS text from `<style>` blocks | `--strip-style` (default on) strips `<style>`/`<script>` before conversion |
 | 8 | Duplicate/near-identical sentences repeated in summaries | `--dedupe-sentences` (default on) skips token-identical duplicate sentences |
 | 9 | One-word fragments ("Go.", "Stop.") waste summary slots | `--min-sentence-len N` (default 4) drops non-heading sentences shorter than N chars |
+| 8 | Duplicate/near-identical sentences repeated in summaries | `--dedupe-sentences` (default on) skips token-identical duplicate sentences |
+| 9 | One-word fragments ("Go.", "Stop.") waste summary slots | `--min-sentence-len N` (default 4) drops non-heading sentences shorter than N chars |

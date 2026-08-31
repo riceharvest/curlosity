@@ -135,6 +135,9 @@ curlosity --provider ~/.config/curlosity/brave.json
 | `--cache-status` | off | Add explicit `cache_status: hit/miss` per fetch result |
 | `--summarize` | off | Attach a local extractive summary to each fetched page |
 | `--summary-sentences` | `5` | Sentences per summary (with `--summarize`) |
+| `--strip-style` | on | Strip `<style>`/`<script>` blocks before HTML→Markdown conversion |
+| `--dedupe-sentences` | on | Skip near-identical duplicate sentences in summaries |
+| `--min-sentence-len` | `4` | Drop non-heading summary sentences shorter than N chars |
 | `--provider` | (env) | Provider config JSON file |
 | `--brave` | off | Use Brave Search (reads `BRAVE_API_KEY`) |
 | `--serper` | off | Use Serper.dev Google search (reads `SERPER_API_KEY`) |
