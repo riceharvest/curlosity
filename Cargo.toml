@@ -36,6 +36,10 @@ ego-tree = "0.6"
 htmd = "0.5"
 
 tempfile = "3"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+globset = "0.4.19"
+clap_mangen = "0.3.3"
+clap_complete = "4.6.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
