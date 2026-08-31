@@ -1,14 +1,14 @@
 #!/bin/sh
 # recurlsively installer — POSIX, fail-closed.
 # Usage: curl -fsSL https://raw.githubusercontent.com/riceharvest/recurlsively/main/install.sh | sh
-# Override version: AGENTIC_WEB_VERSION=v0.1.0 sh install.sh
+# Override version: CURLOSITY_VERSION=v0.1.0 sh install.sh
 set -eu
 
-REPO="riceharvest/agentic-web"
-BIN="agentic-web"
-INSTALL_DIR="${AGENTIC_WEB_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="riceharvest/curlosity"
+BIN="curlosity"
+INSTALL_DIR="${CURLOSITY_INSTALL_DIR:-$HOME/.local/bin}"
 
-log() { printf 'agentic-web-installer: %s\n' "$1" >&2; }
+log() { printf 'curlosity-installer: %s\n' "$1" >&2; }
 fail() { log "ERROR: $1"; exit 1; }
 
 command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 ||
@@ -50,13 +50,13 @@ esac
 
 TARGET="${arch_component}-${os_component}"
 
-if [ -n "${AGENTIC_WEB_VERSION:-}" ]; then
-  VERSION="$AGENTIC_WEB_VERSION"
+if [ -n "${CURLOSITY_VERSION:-}" ]; then
+  VERSION="$CURLOSITY_VERSION"
 else
   log "resolving latest release..."
   VERSION=$(fetch "https://api.github.com/repos/$REPO/releases/latest" |
     sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
-  [ -n "$VERSION" ] || fail "could not determine latest release (set AGENTIC_WEB_VERSION to pin one)"
+  [ -n "$VERSION" ] || fail "could not determine latest release (set CURLOSITY_VERSION to pin one)"
 fi
 
 BASE_URL="https://github.com/$REPO/releases/download/$VERSION"

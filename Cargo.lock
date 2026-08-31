@@ -9,28 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "agentic-web"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "ego-tree 0.6.3",
- "flate2",
- "htmd",
- "reqwest",
- "scraper",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror",
- "tokio",
- "url",
- "zip",
-]
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,6 +281,28 @@ checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
 dependencies = [
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "curlosity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ego-tree 0.6.3",
+ "flate2",
+ "htmd",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "url",
+ "zip",
 ]
 
 [[package]]

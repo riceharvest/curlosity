@@ -1,4 +1,4 @@
-//! agentic-web - 284 searches/session max. 64.7% web_search->web_search chained.
+//! curlosity - 284 searches/session max. 64.7% web_search->web_search chained.
 pub mod update;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub struct BatchResult {
 
 /// Batch entry point - implement real batching here.
 pub async fn batch(req: BatchRequest) -> Result<Vec<BatchResult>> {
-    // TODO: implement batched agentic-web logic
+    // TODO: implement batched curlosity logic
     let _ = req;
     Ok(vec![])
 }

@@ -1,14 +1,14 @@
 # recurlsively installer for Windows — fail-closed.
-# Usage: irm https://raw.githubusercontent.com/riceharvest/agentic-web/main/install.ps1 | iex
-# Override version: $env:AGENTIC_WEB_VERSION = "v0.1.0"
+# Usage: irm https://raw.githubusercontent.com/riceharvest/curlosity/main/install.ps1 | iex
+# Override version: $env:CURLOSITY_VERSION = "v0.1.0"
 $ErrorActionPreference = "Stop"
 
-$Repo = "riceharvest/agentic-web"
-$Bin = "agentic-web"
-$InstallDir = if ($env:AGENTIC_WEB_INSTALL_DIR) { $env:AGENTIC_WEB_INSTALL_DIR } else { "$env:USERPROFILE\.local\bin" }
+$Repo = "riceharvest/curlosity"
+$Bin = "curlosity"
+$InstallDir = if ($env:CURLOSITY_INSTALL_DIR) { $env:CURLOSITY_INSTALL_DIR } else { "$env:USERPROFILE\.local\bin" }
 
 function Fail($message) {
-    Write-Error "agentic-web-installer: ERROR: $message"
+    Write-Error "curlosity-installer: ERROR: $message"
     exit 1
 }
 
@@ -26,15 +26,15 @@ switch ($Arch) {
 }
 
 # Version resolution.
-if ($env:AGENTIC_WEB_VERSION) {
-    $Version = $env:AGENTIC_WEB_VERSION
+if ($env:CURLOSITY_VERSION) {
+    $Version = $env:CURLOSITY_VERSION
 } else {
-    Write-Host "agentic-web-installer: resolving latest release..."
+    Write-Host "curlosity-installer: resolving latest release..."
     try {
         $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -ErrorAction Stop
         $Version = $Release.tag_name
     } catch {
-        Fail "could not determine latest release (set `$env:AGENTIC_WEB_VERSION to pin one): $_"
+        Fail "could not determine latest release (set `$env:CURLOSITY_VERSION to pin one): $_"
     }
 }
 if (-not $Version) { Fail "could not determine release version" }
@@ -45,7 +45,7 @@ $BaseUrl = "https://github.com/$Repo/releases/download/$Version"
 $Tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "recurlsively-install-$PID")
 
 try {
-    Write-Host "agentic-web-installer: downloading $Version for $Target..."
+    Write-Host "curlosity-installer: downloading $Version for $Target..."
     $ArchivePath = Join-Path $Tmp $Archive
     $ChecksumPath = Join-Path $Tmp "SHA256SUMS"
     try {
@@ -55,14 +55,14 @@ try {
         Fail "download failed: $_"
     }
 
-    Write-Host "agentic-web-installer: verifying checksum..."
+    Write-Host "curlosity-installer: verifying checksum..."
     $ExpectedLine = (Get-Content $ChecksumPath) | Where-Object { $_ -match [regex]::Escape($Archive) }
     if (-not $ExpectedLine) { Fail "no checksum found for $Archive" }
     $Expected = ($ExpectedLine -split '\s+')[0].ToLower()
     $Actual = (Get-FileHash -Path $ArchivePath -Algorithm SHA256).Hash.ToLower()
     if ($Actual -ne $Expected) { Fail "checksum mismatch: expected $Expected, got $Actual" }
 
-    Write-Host "agentic-web-installer: extracting..."
+    Write-Host "curlosity-installer: extracting..."
     Expand-Archive -Path $ArchivePath -DestinationPath $Tmp -Force
     $Binary = Join-Path $Tmp "$Bin-$ShortVersion-$Target" "$Bin.exe"
     if (-not (Test-Path $Binary)) { Fail "archive did not contain $Bin.exe" }
@@ -73,9 +73,9 @@ try {
     & (Join-Path $InstallDir "$Bin.exe") --version | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "installed binary failed to run --version" }
 
-    Write-Host "agentic-web-installer: installed $Version to $InstallDir\$Bin.exe"
+    Write-Host "curlosity-installer: installed $Version to $InstallDir\$Bin.exe"
     if ($env:PATH -notlike "*$InstallDir*") {
-        Write-Host "agentic-web-installer: NOTE: $InstallDir is not on your PATH"
+        Write-Host "curlosity-installer: NOTE: $InstallDir is not on your PATH"
     }
 } finally {
     Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue

@@ -1,7 +1,7 @@
 //! `agentic-web --update` — self-update from GitHub Releases.
 
-const REPO: &str = "riceharvest/agentic-web";
-const BIN: &str = "agentic-web";
+const REPO: &str = "riceharvest/curlosity";
+const BIN: &str = "curlosity";
 
 #[derive(Debug)]
 pub enum UpdateError {

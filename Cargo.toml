@@ -1,20 +1,20 @@
 [package]
-name = "agentic-web"
+name = "curlosity"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Batch web research: web_search + web_extract + curl in one tool call (web->web 64.7%). Pure Rust."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/riceharvest/agentic-web"
+repository = "https://github.com/riceharvest/curlosity"
 keywords = ["agentic","hermes","batch","tool"]
 categories = ["development-tools"]
 
 [[bin]]
-name = "agentic-web"
+name = "curlosity"
 path = "src/main.rs"
 
 [lib]
-name = "agentic_web"
+name = "curlosity"
 path = "src/lib.rs"
 
 [workspace]
